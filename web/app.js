@@ -15,7 +15,9 @@
 // ---------------------------------------------------------------------------
 
 // Bluetooth LE
-const BLE_SERVICE_UUID = 0xffe0; // FNB58 uses a 16-bit service that contains the two 128-bit characteristics
+// Short-form (16-bit) alias for the full 128-bit service UUID
+// 0000ffe0-0000-1000-8000-00805f9b34fb that contains the FNB58 characteristics.
+const BLE_SERVICE_UUID = 0xffe0;
 const BLE_WRITE_UUID  = '0000ffe9-0000-1000-8000-00805f9b34fb';
 const BLE_NOTIFY_UUID = '0000ffe4-0000-1000-8000-00805f9b34fb';
 const BLE_INIT_COMMANDS = [
