@@ -43,7 +43,11 @@ const USB_KEEPALIVE = (() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const MAX_POINTS = 500;
+// Maximum data points per chart (safety cap).
+// At BLE 10 Hz this is ~1 hour; at USB 100 Hz ~6 minutes.
+// Old data is NOT discarded below this limit so the full session
+// history stays visible from t = 0.
+const MAX_POINTS = 36000;
 const $ = (id) => document.getElementById(id);
 
 function setStatus(text, kind = 'info') {
@@ -182,8 +186,7 @@ function pushReading(reading) {
 
   for (const [key, value] of pairs) {
     const ds = charts[key].data.datasets[0].data;
-    ds.push({ x: t, y: value });
-    if (ds.length > MAX_POINTS) ds.shift();
+    if (ds.length < MAX_POINTS) ds.push({ x: t, y: value });
     charts[key].update('none');
   }
 
