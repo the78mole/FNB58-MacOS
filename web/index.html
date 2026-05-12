@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FNB58 Web Monitor</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>FNB58 Web Monitor</h1>
+    <p class="subtitle">
+      Direktverbindung zum FNIRSI FNB58 über
+      <strong>Web Bluetooth</strong> oder <strong>WebUSB</strong> –
+      ohne Server, ohne Docker, ohne Installation.
+    </p>
+  </header>
+
+  <main>
+    <section class="card controls">
+      <div class="buttons">
+        <button id="btn-ble"        class="primary">🔵 Bluetooth verbinden</button>
+        <button id="btn-usb"        class="primary">🔌 USB verbinden</button>
+        <button id="btn-disconnect" class="secondary" disabled>Trennen</button>
+      </div>
+      <div class="state">
+        <span id="mode-label">Nicht verbunden</span>
+        <span id="status" data-kind="info">Bereit</span>
+      </div>
+      <p id="support-note" class="hidden warn"></p>
+    </section>
+
+    <section class="card readings">
+      <div class="reading">
+        <span class="label">Spannung</span>
+        <span id="value-voltage" class="value">— V</span>
+      </div>
+      <div class="reading">
+        <span class="label">Strom</span>
+        <span id="value-current" class="value">— A</span>
+      </div>
+      <div class="reading">
+        <span class="label">Leistung</span>
+        <span id="value-power" class="value">— W</span>
+      </div>
+      <div class="reading">
+        <span class="label">D+</span>
+        <span id="value-dp" class="value">— V</span>
+      </div>
+      <div class="reading">
+        <span class="label">D−</span>
+        <span id="value-dn" class="value">— V</span>
+      </div>
+      <div class="reading">
+        <span class="label">Temperatur</span>
+        <span id="value-temp" class="value">— °C</span>
+      </div>
+    </section>
+
+    <section class="card chart-card">
+      <h2>Spannung</h2>
+      <div class="chart-wrap"><canvas id="chart-voltage"></canvas></div>
+    </section>
+
+    <section class="card chart-card">
+      <h2>Strom</h2>
+      <div class="chart-wrap"><canvas id="chart-current"></canvas></div>
+    </section>
+
+    <section class="card chart-card">
+      <h2>Leistung</h2>
+      <div class="chart-wrap"><canvas id="chart-power"></canvas></div>
+    </section>
+
+    <section class="card info">
+      <h2>Browser-Anforderungen</h2>
+      <ul>
+        <li><strong>Web Bluetooth</strong>: Chrome, Edge, Opera auf Desktop / Android. Auf macOS muss Bluetooth aktiviert sein.</li>
+        <li><strong>WebUSB</strong>: Chrome, Edge, Opera auf Desktop / Android. Unter Linux ggf. udev-Regeln für VID <code>0x0716</code> setzen. Unter Windows wird ggf. WinUSB als Treiber benötigt (z.&nbsp;B. via Zadig).</li>
+        <li>Die Seite muss über <strong>HTTPS</strong> (oder <code>localhost</code>) ausgeliefert werden. GitHub Pages erfüllt diese Anforderung automatisch.</li>
+        <li>Es werden keinerlei Daten an einen Server übertragen – die Kommunikation findet komplett im Browser statt.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Quellcode &amp; Doku:
+      <a href="https://github.com/the78mole/FNB58-MacOS">github.com/the78mole/FNB58-MacOS</a>
+    </p>
+  </footer>
+</body>
+</html>
