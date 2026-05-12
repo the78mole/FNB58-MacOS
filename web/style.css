@@ -162,3 +162,69 @@ footer {
 }
 
 footer a { color: var(--accent); }
+
+/* ---- Bluetooth debug log ---- */
+
+.log-card { padding-bottom: 0.75rem; }
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.log-header h2 { margin: 0; }
+
+.log-clear-btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.log-output {
+  height: 220px;
+  overflow-y: auto;
+  background: #0a1220;
+  border: 1px solid #1e3a5f;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  scroll-behavior: smooth;
+}
+
+.log-entry {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  border-bottom: 1px solid #0f1e32;
+  padding: 1px 0;
+}
+
+.log-ts {
+  color: #4b5e75;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.log-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+.log-badge-info  { background: #1e3a5f; color: #60a5fa; }
+.log-badge-ok    { background: #14352a; color: var(--ok); }
+.log-badge-warn  { background: #3a2a0a; color: var(--warn); }
+.log-badge-error { background: #3a0a0a; color: var(--error); }
+
+.log-msg { color: #c8d6e5; word-break: break-all; }
+
+.log-entry.log-warn  .log-msg { color: var(--warn); }
+.log-entry.log-error .log-msg { color: var(--error); }
+.log-entry.log-ok    .log-msg { color: var(--ok); }
