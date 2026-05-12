@@ -14,9 +14,13 @@ from bleak import BleakClient, BleakScanner
 class BluetoothReader:
     """Bluetooth LE communication with FNIRSI FNB58"""
     
-    # Bluetooth UUIDs
+    # Fallback Bluetooth UUIDs (used when dynamic discovery fails)
     WRITE_UUID = "0000ffe9-0000-1000-8000-00805f9b34fb"
     NOTIFY_UUID = "0000ffe4-0000-1000-8000-00805f9b34fb"
+    
+    # Short UUIDs to search for (covers both ffe9 and alternate write chars like ffe1)
+    WRITE_SHORT_UUIDS = ["ffe9", "ffe1"]
+    NOTIFY_SHORT_UUIDS = ["ffe4", "ffe1"]
     
     # Initialization commands
     INIT_COMMANDS = [
@@ -34,6 +38,9 @@ class BluetoothReader:
         self.data_buffer = deque(maxlen=1000)
         self.loop = None
         self.thread = None
+        # Resolved characteristic UUIDs (filled after connection)
+        self._write_uuid = None
+        self._notify_uuid = None
         
     async def scan_devices(self, timeout=10):
         """Scan for FNIRSI devices"""
@@ -51,6 +58,36 @@ class BluetoothReader:
         
         return fnirsi_devices
     
+    def _find_characteristic(self, short_uuids, required_property=None):
+        """Search all services for a characteristic matching any of the given short UUIDs.
+
+        Iterates ``short_uuids`` in order so callers can express preference (first
+        match wins).  When ``required_property`` is given (e.g. ``"notify"`` or
+        ``"write-without-response"``) only characteristics that advertise that
+        property are returned.
+
+        Args:
+            short_uuids: List of 4-hex-digit UUID fragments to search for.
+            required_property: Optional GATT property name that the characteristic
+                must expose (matched case-insensitively against Bleak's property
+                strings).
+
+        Returns:
+            The full characteristic UUID string if found, otherwise None.
+        """
+        for short in short_uuids:
+            prefix = f"0000{short.lower()}"
+            for service in self.client.services:
+                for char in service.characteristics:
+                    if not char.uuid.lower().startswith(prefix):
+                        continue
+                    if required_property is not None:
+                        props = [p.lower() for p in char.properties]
+                        if required_property.lower() not in props:
+                            continue
+                    return char.uuid
+        return None
+
     async def _connect_async(self):
         """Async connection handler"""
         # If no address provided, scan for device
@@ -71,11 +108,43 @@ class BluetoothReader:
             raise ConnectionError("Failed to connect to device")
         
         print(f"Connected to {self.device_address}")
-        
-        # Send initialization commands
-        for cmd in self.INIT_COMMANDS:
-            await self.client.write_gatt_char(self.WRITE_UUID, cmd)
-            await asyncio.sleep(0.1)
+
+        # Log available services and characteristics for diagnostics
+        print("Discovering GATT services...")
+        for service in self.client.services:
+            print(f"  Service: {service.uuid}")
+            for char in service.characteristics:
+                print(f"    Characteristic: {char.uuid}  props={char.properties}")
+
+        # Resolve write and notify UUIDs dynamically across all services.
+        # Pass required_property so we avoid picking e.g. ffe1-write as the
+        # notify char when ffe4-notify exists (and vice versa).
+        self._notify_uuid = self._find_characteristic(self.NOTIFY_SHORT_UUIDS, required_property="notify")
+        self._write_uuid = self._find_characteristic(
+            self.WRITE_SHORT_UUIDS,
+            required_property="write-without-response"
+        ) or self._find_characteristic(self.WRITE_SHORT_UUIDS, required_property="write")
+
+        if self._notify_uuid:
+            print(f"Notify characteristic resolved: {self._notify_uuid}")
+        else:
+            print(f"Warning: no notify characteristic found, tried {self.NOTIFY_SHORT_UUIDS}. "
+                  f"Falling back to {self.NOTIFY_UUID}")
+            self._notify_uuid = self.NOTIFY_UUID
+
+        if self._write_uuid:
+            print(f"Write characteristic resolved: {self._write_uuid}")
+            # Send initialization commands
+            for cmd in self.INIT_COMMANDS:
+                try:
+                    await self.client.write_gatt_char(self._write_uuid, cmd)
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    print(f"Warning: init command failed (non-fatal): {e}")
+        else:
+            print(f"Warning: no write characteristic found, tried {self.WRITE_SHORT_UUIDS}. "
+                  "Skipping initialization commands.")
+            self._write_uuid = self.WRITE_UUID
         
         self.is_connected = True
         return True
@@ -101,9 +170,17 @@ class BluetoothReader:
                 if self.data_callback:
                     self.data_callback(reading)
         
+        notify_uuid = self._notify_uuid
+
         # Start notifications
-        await self.client.start_notify(self.NOTIFY_UUID, notification_handler)
-        print("Bluetooth notifications enabled")
+        try:
+            await self.client.start_notify(notify_uuid, notification_handler)
+            print(f"Bluetooth notifications enabled on {notify_uuid}")
+        except Exception as e:
+            raise ConnectionError(
+                f"Could not enable notifications on {notify_uuid}: {e}. "
+                "Check that the device exposes a notify characteristic."
+            )
         
         # Keep reading until stopped
         while self.is_reading and self.client.is_connected:
@@ -111,8 +188,8 @@ class BluetoothReader:
         
         # Stop notifications
         try:
-            await self.client.stop_notify(self.NOTIFY_UUID)
-        except:
+            await self.client.stop_notify(notify_uuid)
+        except Exception:  # noqa: BLE001 – best-effort cleanup on disconnect
             pass
     
     def start_reading(self, callback=None):
