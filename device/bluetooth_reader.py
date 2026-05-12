@@ -77,13 +77,14 @@ class BluetoothReader:
         """
         for short in short_uuids:
             prefix = f"0000{short.lower()}"
+            req_prop = required_property.lower() if required_property is not None else None
             for service in self.client.services:
                 for char in service.characteristics:
                     if not char.uuid.lower().startswith(prefix):
                         continue
-                    if required_property is not None:
+                    if req_prop is not None:
                         props = [p.lower() for p in char.properties]
-                        if required_property.lower() not in props:
+                        if req_prop not in props:
                             continue
                     return char.uuid
         return None

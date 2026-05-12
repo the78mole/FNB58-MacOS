@@ -15,11 +15,13 @@
 // ---------------------------------------------------------------------------
 
 // Bluetooth LE
-// Short-form (16-bit) alias for the full 128-bit service UUID
-// 0000ffe0-0000-1000-8000-00805f9b34fb that contains the FNB58 characteristics.
-const BLE_SERVICE_UUID = 0xffe0;
-const BLE_WRITE_UUID  = '0000ffe9-0000-1000-8000-00805f9b34fb';
-const BLE_NOTIFY_UUID = '0000ffe4-0000-1000-8000-00805f9b34fb';
+// The FNB58 exposes two relevant GATT services:
+//   0xffe0 – may contain the notify characteristic (ffe4)
+//   0xffe5 – contains the write characteristic (ffe9)
+// Both must be listed in optionalServices so the browser grants access.
+const BLE_SERVICE_UUIDS = [0xffe0, 0xffe5];
+const BLE_WRITE_UUID    = '0000ffe9-0000-1000-8000-00805f9b34fb';
+const BLE_NOTIFY_UUID   = '0000ffe4-0000-1000-8000-00805f9b34fb';
 const BLE_INIT_COMMANDS = [
   new Uint8Array([0xaa, 0x81, 0x00, 0xf4]),
   new Uint8Array([0xaa, 0x82, 0x00, 0xa7]),
@@ -64,7 +66,54 @@ function fmt(value, digits = 3) {
 
 function logError(prefix, err) {
   console.error(prefix, err);
-  setStatus(`${prefix}: ${err.message || err}`, 'error');
+  const msg = `${prefix}: ${err.message || err}`;
+  setStatus(msg, 'error');
+  appendLog(msg, 'error');
+}
+
+// ---------------------------------------------------------------------------
+// Debug log
+// ---------------------------------------------------------------------------
+
+const MAX_LOG_ENTRIES = 200;
+
+/** Escape a string for safe insertion into innerHTML. */
+function htmlEscape(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Append a line to the on-screen debug log panel.
+ * @param {string} message
+ * @param {'info'|'warn'|'error'|'ok'} level
+ */
+function appendLog(message, level = 'info') {
+  const panel = $('bt-log');
+  if (!panel) return;
+
+  const entry = document.createElement('div');
+  entry.className = `log-entry log-${level}`;
+
+  const ts = new Date().toLocaleTimeString('de-DE', { hour12: false });
+  entry.innerHTML =
+    `<span class="log-ts">${ts}</span>` +
+    `<span class="log-badge log-badge-${level}">${level.toUpperCase()}</span>` +
+    `<span class="log-msg">${htmlEscape(message)}</span>`;
+
+  panel.appendChild(entry);
+
+  // Keep the buffer bounded
+  while (panel.children.length > MAX_LOG_ENTRIES) {
+    panel.removeChild(panel.firstChild);
+  }
+
+  // Auto-scroll to bottom
+  panel.scrollTop = panel.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,54 +215,88 @@ class BleDriver {
       throw new Error('Web Bluetooth wird von diesem Browser nicht unterstützt');
     }
 
+    appendLog('Scanne nach FNB58 …');
     setStatus('Scanne nach FNB58 …');
     this.device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'FNB' }],
-      optionalServices: [BLE_SERVICE_UUID, BLE_WRITE_UUID, BLE_NOTIFY_UUID],
+      optionalServices: BLE_SERVICE_UUIDS,
     });
 
     this.device.addEventListener('gattserverdisconnected', () => {
+      appendLog('Bluetooth getrennt', 'warn');
       setStatus('Bluetooth getrennt', 'warn');
       setConnected(false);
     });
 
+    appendLog(`Verbinde zu ${this.device.name || this.device.id} …`);
     setStatus(`Verbinde zu ${this.device.name || this.device.id} …`);
     const server = await this.device.gatt.connect();
 
-    // Find the service that contains the characteristics. Different firmware
-    // revisions of the FNB58 advertise the characteristics under different
-    // 128-bit services, so try the well-known 0xffe0 service first and then
-    // fall back to scanning all primary services.
-    let service;
-    try {
-      service = await server.getPrimaryService(BLE_SERVICE_UUID);
-    } catch (_) {
-      const services = await server.getPrimaryServices();
-      for (const s of services) {
-        try {
-          await s.getCharacteristic(BLE_NOTIFY_UUID);
-          service = s;
-          break;
-        } catch (_) { /* keep looking */ }
+    // Enumerate all primary services and log them for diagnostics.
+    const services = await server.getPrimaryServices();
+    appendLog(`${services.length} GATT-Service(s) gefunden`);
+
+    // Resolve write and notify characteristics independently across all services.
+    // On most FNB58 firmware versions the write char (ffe9) lives in service ffe5
+    // while the notify char (ffe4) may live in service ffe0 – they are NOT in the
+    // same service.
+    let writeChar  = null;
+    let notifyChar = null;
+
+    for (const svc of services) {
+      let chars = [];
+      try { chars = await svc.getCharacteristics(); } catch (_) { /* empty service */ }
+
+      const props = (c) =>
+        Object.entries(c.properties).filter(([, v]) => v).map(([k]) => k).join(', ');
+
+      appendLog(`  Service ${svc.uuid}: ${chars.length} Charakteristik(en)`);
+      for (const c of chars) {
+        appendLog(`    ${c.uuid}  [${props(c)}]`);
+        const uuid = c.uuid.toLowerCase();
+        if (!writeChar  && uuid.startsWith('0000ffe9')) writeChar  = c;
+        if (!notifyChar && uuid.startsWith('0000ffe4')) notifyChar = c;
       }
-      if (!service) throw new Error('FNB58 GATT service nicht gefunden');
     }
 
-    this.writeChar  = await service.getCharacteristic(BLE_WRITE_UUID);
-    this.notifyChar = await service.getCharacteristic(BLE_NOTIFY_UUID);
+    if (!notifyChar) {
+      const msg = 'Keine Notify-Charakteristik (ffe4) gefunden – Verbindung nicht möglich';
+      appendLog(msg, 'error');
+      throw new Error(msg);
+    }
+    appendLog(`Notify-Charakteristik gefunden: ${notifyChar.uuid}`, 'ok');
 
-    this.notifyChar.addEventListener('characteristicvaluechanged', (evt) => {
+    if (!writeChar) {
+      appendLog('Keine Write-Charakteristik (ffe9) gefunden – Init-Kommandos werden übersprungen', 'warn');
+    } else {
+      appendLog(`Write-Charakteristik gefunden: ${writeChar.uuid}`, 'ok');
+    }
+
+    notifyChar.addEventListener('characteristicvaluechanged', (evt) => {
       const reading = this._parse(evt.target.value);
       if (reading) onReading(reading);
     });
-    await this.notifyChar.startNotifications();
+    await notifyChar.startNotifications();
+    appendLog('Notifications aktiviert');
 
-    for (const cmd of BLE_INIT_COMMANDS) {
-      await this.writeChar.writeValue(cmd);
-      await new Promise((r) => setTimeout(r, 100));
+    if (writeChar) {
+      for (const cmd of BLE_INIT_COMMANDS) {
+        try {
+          await writeChar.writeValue(cmd);
+          await new Promise((r) => setTimeout(r, 100));
+        } catch (err) {
+          appendLog(`Init-Kommando fehlgeschlagen (nicht kritisch): ${err.message}`, 'warn');
+        }
+      }
+      appendLog('Init-Kommandos gesendet');
     }
 
-    setStatus(`Bluetooth verbunden: ${this.device.name || this.device.id}`, 'ok');
+    this.writeChar  = writeChar;
+    this.notifyChar = notifyChar;
+
+    const label = this.device.name || this.device.id;
+    appendLog(`Bluetooth verbunden: ${label}`, 'ok');
+    setStatus(`Bluetooth verbunden: ${label}`, 'ok');
     setConnected(true, 'Bluetooth');
   }
 
@@ -393,6 +476,7 @@ let activeDriver = null;
 
 async function connectBle() {
   if (activeDriver) return;
+  appendLog('--- Bluetooth-Verbindungsversuch ---');
   const driver = new BleDriver();
   try {
     await driver.connect(pushReading);
@@ -404,6 +488,7 @@ async function connectBle() {
 
 async function connectUsb() {
   if (activeDriver) return;
+  appendLog('--- USB-Verbindungsversuch ---');
   const driver = new UsbDriver();
   try {
     await driver.connect(pushReading);
@@ -450,4 +535,8 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btn-ble').addEventListener('click', connectBle);
   $('btn-usb').addEventListener('click', connectUsb);
   $('btn-disconnect').addEventListener('click', disconnect);
+  $('btn-clear-log').addEventListener('click', () => {
+    const panel = $('bt-log');
+    if (panel) panel.innerHTML = '';
+  });
 });
