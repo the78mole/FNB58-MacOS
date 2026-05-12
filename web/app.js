@@ -218,7 +218,15 @@ class BleDriver {
     appendLog('Scanne nach FNB58 …');
     setStatus('Scanne nach FNB58 …');
     this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'FNB' }],
+      // Multiple filters are OR-combined by the browser.
+      // Name-prefix covers most firmware versions; service-UUID filters
+      // cover devices that only advertise via GATT service (no name).
+      filters: [
+        { namePrefix: 'FNB' },
+        { namePrefix: 'FNIRSI' },
+        { services: [0xffe0] },
+        { services: [0xffe5] },
+      ],
       optionalServices: BLE_SERVICE_UUIDS,
     });
 
