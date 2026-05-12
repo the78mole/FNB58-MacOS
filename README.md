@@ -79,9 +79,26 @@ Monitor voltage, current, power, and more in real-time through your web browser.
 
 ## 🚀 Quick Start
 
-**Two ways to run:**
-1. **🐳 Docker** (Recommended) - Easy deployment, no dependencies
-2. **🐍 Python** - Native installation
+**Three ways to run:**
+1. **🌐 Browser-only (GitHub Pages)** - Zero install, talks directly to the FNB58 via Web Bluetooth / WebUSB
+2. **🐳 Docker** - Easy deployment of the full Flask app, no Python install needed
+3. **🐍 Python** - Native installation of the full Flask app
+
+### Option 0: Browser-only via GitHub Pages
+
+A statically-hosted variant lives in [`web/`](web/) and is automatically
+deployed to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+
+Once enabled in the repository settings (**Settings → Pages → Build and deployment → Source: GitHub Actions**),
+the app is available at:
+
+```
+https://<owner>.github.io/<repo>/
+```
+
+It uses the **Web Bluetooth** and **WebUSB** browser APIs to communicate
+directly with the FNB58 – no server, no Docker, no installation. Requires a
+Chromium-based browser (Chrome, Edge, Opera) on Desktop or Android.
 
 ### Option 1: Docker (Recommended)
 
